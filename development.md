@@ -1,0 +1,326 @@
+# 开发与构建文档
+
+本文件面向需要**修改站点本身**的人：改配置、调样式、动构建或部署。
+
+> 只是想补充或修正文档内容？请看 [贡献指南](CONTRIBUTING.md)。返回 [项目首页](README.md)。
+
+## 目录
+
+- [环境要求](#环境要求)
+- [常用命令](#常用命令)
+- [目录结构](#目录结构)
+- [三套文档实例的工作方式](#三套文档实例的工作方式)
+- [关于默认文档实例](#关于默认文档实例)
+- [v4 迁移准备](#v4-迁移准备)
+- [第三方插件：图片放大预览](#第三方插件图片放大预览)
+- [npm audit 警告：请勿执行 `npm audit fix --force`](#npm-audit-警告请勿执行-npm-audit-fix---force)
+- [npm 11 allowScripts 说明](#npm-11-allowscripts-说明)
+- [常见问题排查](#常见问题排查)
+- [部署](#部署)
+
+---
+
+## 环境要求
+
+| 项目 | 要求 |
+| --- | --- |
+| Node.js | **24 LTS 或更高** |
+| 包管理器 | npm 11.x（`allowScripts` 白名单机制会拦截安装脚本，见[下方说明](#npm-11-allowscripts-说明)） |
+
+
+## 常用命令
+
+```bash
+npm install          # 安装依赖
+npm run start        # 本地开发服务器（http://localhost:3000）
+npm run build        # 生产构建，产物输出到 build/
+npm run serve        # 预览 build/ 产物
+npm run typecheck    # TypeScript 类型检查
+npm run clear        # 清理 .docusaurus 缓存
+
+# 批量把旧式标题 ID 迁移为严格 MDX v3 写法
+npm run write-heading-ids -- --syntax mdx-comment --migrate
+```
+
+## 目录结构
+
+```
+.
+├── docs-web/             # Web 文档      → /web      （实例 id: web）
+├── docs-mcje/            # MCJE 文档     → /mcje     （实例 id: mcje）
+├── docs-mcbe/            # MCBE 文档     → /mcbe     （实例 id: mcbe）
+├── sidebars-web.ts       # Web 实例侧边栏（key: webSidebar）
+├── sidebars-mcje.ts      # MCJE 实例侧边栏（key: mcjeSidebar）
+├── sidebars-mcbe.ts      # MCBE 实例侧边栏（key: mcbeSidebar）
+├── src/pages/index.tsx   # 首页（充当总览页）
+├── static/img/           # 静态资源（logo、favicon、社交卡片）
+└── docusaurus.config.ts
+```
+
+三套文档目录统一采用 `docs-*` 前缀，便于在文件树中相邻排列。
+
+## 三套文档实例的工作方式
+
+三个产品文档由 `@docusaurus/plugin-content-docs` 的**多实例能力**提供：每个实例有独立的 `id`、`path`、`routeBasePath` 和 `sidebarPath`。
+
+**内容贡献者请看 [贡献指南](CONTRIBUTING.md#三三套文档实例的目录映射)**，那里有面向写作者的说明。下面是面向开发者的注意事项。
+
+新增一套文档需要同时改 4 处，**漏掉任何一处都会出问题**：
+
+1. 新建内容目录，如 `docs-xxx/`
+2. 新建侧边栏文件，导出**全局唯一**的 sidebarId，如 `sidebars-xxx.ts` → `xxxSidebar`
+3. 在 `docusaurus.config.ts` 的 `plugins` 中追加一个插件实例（`id: 'xxx'`）
+4. 在 `themeConfig.navbar.items` 中追加入口，**必须写 `docsPluginId: 'xxx'`**
+
+> ⚠️ 第 4 步的 `docsPluginId` 是最容易漏的。省略它会落到默认文档实例上。本仓库已把默认实例设为 `docs: false`，因此**漏写会直接构建报错**——这反而更安全，因为错误会立刻暴露，而不是静默指向错误的侧边栏。
+
+侧边栏的 key 必须全局唯一，因为它同时被导航栏的 `sidebarId` 和 `docSidebar` 链接引用。
+
+## 关于默认文档实例
+
+`preset-classic` 的 `docs` 设为 **`false`**：本站只有三套产品文档，全部由独立插件实例提供，保留预设自带实例会多出一个无关的第四套。
+
+这样做的安全性依据（源码级确认）：
+
+- 导航栏 logo 链接是 `useBaseUrl(logo?.href || '/')`，**默认指向站点根 `/`，不指向 `/docs`**，因此 `docs: false` 不会产生死链
+- 原先指向 `/docs/intro` 的入口（首页按钮、footer）已改为指向真实产品路由
+
+## v4 迁移准备
+
+`future` 配置采用官方推荐的**一次性全开**写法：
+
+```ts
+future: {
+  v4: true,
+}
+```
+
+它在 3.10.2 上同时开启以下三项 v4 破坏性变更：
+
+| Flag | 作用 | 已在本仓库验证 |
+| --- | --- | --- |
+| `siteStorageNamespacing` | `localStorage` 键自动命名空间化（`theme` → `theme-<hash>`）。**会重置一次访客本地存储，这是预期行为**，因此 v4 迁移时无需再做存储键迁移 | ✅ 产物中为 `localStorage.getItem("theme-4a9")` |
+| `fasterByDefault` | 默认启用 Docusaurus Faster（Rspack + SWC + LightningCSS），并启用 eager git VCS 策略读取 `showLastUpdateAuthor` / `showLastUpdateTime` | ✅ 构建走 Faster 链路 |
+| `mdx1CompatDisabledByDefault` | 关闭 MDX v1 兼容 shim（`comments` / `admonitions` / `headingIds` 三项全部默认 `false`），文档按**严格 MDX v3** 解析 | ✅ `:::tip[标题]` 正常渲染为带标题的提示框 |
+
+### 关键前置条件：`@docusaurus/faster` 必须是直接依赖
+
+只要启用了 `future.v4`（或 `future.faster`），**`@docusaurus/faster` 必须出现在 `package.json` 的 `dependencies` 里**，否则 `npm run build` 直接失败。本仓库已锁定该依赖，**请勿移除**。
+
+### 严格 MDX v3 写作规则
+
+| 写法 | 严格 MDX v3（本站） | 旧 MDX v1 兼容写法（已禁用） |
+| --- | --- | --- |
+| 警告框标题 | `:::tip[阅读建议]` | `:::tip 阅读建议` |
+| 标题 ID | `## 我的标题 {/* #my-id */}` | `## 我的标题 {#my-id}` |
+| 注释 | `{/* 注释 */}` | `<!-- 注释 -->` |
+
+批量迁移已有标题 ID：
+
+```bash
+npm run write-heading-ids -- --syntax mdx-comment --migrate
+```
+
+> 注意：把 `.md` 改成 `.mdx` **与本 flag 无关**——那是 Docusaurus 3.0 的变更。`mdx1CompatDisabledByDefault` 只管上面三项 shim，排查问题时不要混淆。
+
+## 第三方插件：图片放大预览
+
+本站装了 [`docusaurus-plugin-image-zoom`](https://github.com/gabrielcsapo/docusaurus-plugin-image-zoom)（基于 `medium-zoom`），
+让文档里的图片**点击即可放大**。效果：点击图片后铺满视口，点击任意处或按 Esc 还原。
+
+### 配置位置容易搞错
+
+这个插件的配置**不在插件 options 里**，而是在 `themeConfig.zoom`：
+
+```ts
+plugins: [
+  'docusaurus-plugin-image-zoom',
+  // ...
+],
+
+themeConfig: {
+  zoom: {
+    selector: '.markdown img',   // 只作用于正文图片，不影响 logo 等
+    background: {
+      light: 'rgb(255, 255, 255)',
+      dark: 'rgb(50, 50, 50)',   // 深色模式遮罩，已实测生效
+    },
+    config: {
+      margin: 48,                // medium-zoom 选项
+    },
+  },
+}
+```
+
+`config` 里可用的其余选项见 [medium-zoom 文档](https://github.com/francoischalifour/medium-zoom#usage)。
+
+### 类型断言为什么不是 `satisfies`
+
+第三方插件从 `themeConfig` 读配置，但**不导出任何 TS 类型**。若沿用 `satisfies Preset.ThemeConfig`，
+多出来的 `zoom` 键会被判定为类型错误。因此 `themeConfig` 改为：
+
+```ts
+themeConfig: {
+  // ...
+} as ThemeConfig,   // 注意：是 as，不是 satisfies
+```
+
+外层的 `const config: Config` 注解仍然会校验其余所有字段，所以并未牺牲类型安全。
+
+### 已实测确认
+
+- `medium-zoom` 已打包进客户端产物（`assets/js/main.*.js`）
+- 在真实浏览器中点击图片，`.medium-zoom-image--opened` 与遮罩层正常出现
+- 深色模式下遮罩取到 `background.dark` 的值（实测 `rgb(50, 50, 50)`）
+
+## npm audit 警告：请勿执行 `npm audit fix --force`
+
+`npm audit` 会报告约 45 条漏洞（含 15 条 critical）。**这些与本项目自身的配置和插件无关**，
+根因在 Docusaurus 的传递依赖上，主要是：
+
+- `tinypool`（原型污染导致 RCE）
+- `webpack-dev-server`
+
+它们**只存在于开发/构建期的依赖里，不会进入 `build/` 产物**，也不随站点发布给访客。
+
+⚠️ **`npm audit` 给出的"修复"建议是把 `@docusaurus/*` 降级到 3.7.0。**
+执行 `npm audit fix --force` 就会降级，**直接破坏本仓库的 `future.v4` 配置与 Docusaurus Faster**。
+
+> 正确处理方式：在漏洞有可用的上游修复版本前**忽略它**。等 Docusaurus 发布修复版后再统一升级。
+> 切勿使用 `--force`。
+
+## npm 11 allowScripts 说明
+
+npm 11.19+ 默认拦截依赖的安装脚本。安装时会出现：
+
+```
+npm warn install-scripts  @swc/core@1.16.13 (postinstall: node postinstall.js)
+npm warn install-scripts  core-js@3.50.0 (postinstall: ...)
+```
+
+**无需处理**：Rspack/SWC 所需的原生绑定是通过可选依赖包（`@swc/core-win32-x64-msvc`、`@swc/html-win32-x64-msvc`）提供的，不依赖 postinstall 下载。本仓库在此警告存在的情况下 `build` 与 `typecheck` 均通过。
+
+若安装后仍报 SWC 二进制缺失，再执行：
+
+```bash
+npm install-scripts approve @swc/core
+```
+
+## 常见问题排查
+
+### `npm run start` 报 Rspack panic（模块图找不到）
+
+典型报错：
+
+```
+● Client ██████████ (9%) setup compilation
+Panic occurred at runtime. Please file an issue on GitHub with the backtrace below:
+https://github.com/web-infra-dev/rspack/issues:
+panicked at crates\rspack_core\src\module_graph\mod.rs:722:26:
+ModuleGraphModule with identifier Identifier(u!("...\node_modules\@rspack\core\dist\cssExtractHmr.js")) not found
+```
+
+**这不是配置文件写错了**，而是 **Rspack 持久化缓存损坏**。这是已知问题，参见
+[rspack#14064](https://github.com/web-infra-dev/rspack/issues/14064)、
+[rspack#13454](https://github.com/web-infra-dev/rspack/issues/13454)。
+
+#### 为什么会发生
+
+`future.v4: true` 会开启 `fasterByDefault`，进而把 **`rspackPersistentCache` 默认打开**。
+该缓存位于 `node_modules/.cache/rspack/`，会把**模块图**持久化到磁盘。
+
+一旦项目结构有较大变动——例如**重命名文档目录、增删文档实例、修改 `docusaurus.config.ts`**——
+缓存里的模块图就可能与实际依赖对不上。Rspack 在这种情况下**不会优雅降级，而是直接 panic**。
+
+> 注意：`npm run build` 往往仍然正常，因为 panic 发生在 **dev 的 HMR 路径**上。
+> 所以「build 能过」不代表 dev 一定没问题。
+
+#### 解决办法
+
+清缓存后重启即可：
+
+```bash
+npm run clear     # 同时清理 build/、.docusaurus/ 和 node_modules/.cache/（含 rspack 缓存）
+npm run start
+```
+
+`npm run clear` 会明确列出清理内容：
+
+```
+[SUCCESS] Removed the build output folder at "build".
+[SUCCESS] Removed the generated folder at ".docusaurus".
+[SUCCESS] Removed the bundler persistent cache folder at "node_modules\.cache".
+```
+
+> **养成习惯**：大改目录结构或文档实例配置后，先 `npm run clear` 再 `npm run start`，
+> 可以避开绝大多数这类缓存不一致问题。
+
+#### 彻底关闭持久化缓存
+
+若 panic 反复出现，可用官方环境变量关掉持久化缓存（dev 退回内存缓存，代价是构建变慢）：
+
+```powershell
+$env:DOCUSAURUS_NO_PERSISTENT_CACHE = '1'; npm run start
+```
+
+```bash
+# bash / zsh
+DOCUSAURUS_NO_PERSISTENT_CACHE=1 npm run start
+```
+
+对应源码见 `@docusaurus/core/lib/webpack/base.js` 的 `getCache()`。
+
+### 用工具请求 dev server 的子路径返回 404
+
+用 `curl` / `Invoke-WebRequest` 访问 `http://localhost:3000/web/intro` 得到 404，
+**通常是假象，不是路由坏了**。
+
+Docusaurus dev server 的 SPA 回退（`historyApiFallback`）**只对 `Accept: text/html` 请求生效**
+（这是 `connect-history-api-fallback` 的标准行为）。命令行工具默认发 `Accept: */*`，因此不触发回退。
+
+**浏览器访问是正常的。** 确需命令行验证时带上 HTML 的 Accept 头：
+
+```bash
+curl -H 'Accept: text/html' http://localhost:3000/web/intro
+```
+
+> 另外，dev server 只提供**最小 SPA 外壳**，页面内容由浏览器端渲染。
+> 因此不要用 dev 模式的返回内容判断页面是否正确，**请用 `npm run build` + `npm run serve`**。
+
+## 部署
+
+部署目标为自定义域名 **simpdoc.top**，站点位于域名根路径：
+
+```ts
+url: 'https://simpdoc.top',
+baseUrl: '/',            // 根路径部署。若将来挪到子路径，这里必须同步改
+```
+
+`baseUrl` 直接影响所有静态资源与站内链接的生成。**它是子路径部署时最常见的出错点**：若把产物挂到 `https://simpdoc.top/wiki/` 却保持 `baseUrl: '/'`，CSS/JS 会全部 404。
+
+### 与 GitHub Pages 相关的两个字段
+
+```ts
+organizationName: 'simpdoc',
+projectName: 'simpfun-wiki',
+```
+
+这两个字段**仅被 `docusaurus deploy` 命令读取**（见 `@docusaurus/core/lib/commands/deploy.js`），静态构建完全不使用，因此对 simpdoc.top 部署**无影响**，留着也不会导致构建错误。若确定永不使用 `npm run deploy`，可以删掉以减少困惑。
+
+### 部署流程
+
+```bash
+npm run build      # 产物输出到 build/
+```
+
+将 `build/` 整个目录上传到 simpdoc.top 的站点根目录即可。
+
+> **注意**：`build/` 目录下**不要**添加 `CNAME` 文件。`CNAME` 是 GitHub Pages 专用的自定义域名标记，对其他静态托管平台无用，部分平台还可能将其当作普通文件发布，导致 `https://simpdoc.top/CNAME` 可被公开访问。
+
+### 上线前检查清单
+
+- [ ] `npm run typecheck` 通过
+- [ ] `npm run build` 通过（`onBrokenLinks: 'throw'` 会拦住所有站内死链）
+- [ ] `npm run serve` 后抽查 `/`、`/web/intro`、`/mcje/intro`、`/mcbe/intro` 均正常
+- [ ] 确认 `baseUrl` 与实际挂载路径一致
+- [ ] 确认 `static/img/` 中的 logo 与 favicon 是最新版本
