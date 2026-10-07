@@ -8,7 +8,7 @@
 
 ## 网站
 
-主域名：<https://simpdoc.top/>
+主域名：<https://next.simpdoc.top/>
 
 ## 参与贡献
 
