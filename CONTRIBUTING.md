@@ -15,7 +15,7 @@
 | 报错 / 提需求 | 任何人 | [新建 Issue](https://github.com/simpdoc/simpfun-wiki/issues/new/choose) |
 | 改站点样式、配置 | 会前端 | [开发文档](development.md) |
 
-**最快的方式**：打开 <https://simpdoc.top/>，翻到任意页面底部，点击 **「编辑此页」**。
+**最快的方式**：打开 <https://next.simpdoc.top/>，翻到任意页面底部，点击 **「编辑此页」**。
 GitHub 会直接打开对应的源文件，改完在网页上提交即可，**全程不需要本地环境**。
 
 ### 通过 Issue 反馈
@@ -43,7 +43,7 @@ GitHub 会直接打开对应的源文件，改完在网页上提交即可，**�
 | MCJE | `docs-mcje/` | `/mcje/...` |
 | MCBE | `docs-mcbe/` | `/mcbe/...` |
 
-例如 <https://simpdoc.top/web/create_server> 对应 `docs-web/03-create_server.mdx`。
+例如 <https://next.simpdoc.top/web/create_server> 对应 `docs-web/03-create_server.mdx`。
 
 > **文件名里的数字前缀会被去掉**（`03-` 不出现在 URL 里），后面的部分原样保留。
 > 本仓库用**下划线**连接单词，所以 URL 里也是下划线。
