@@ -38,7 +38,7 @@ export default function Home(): ReactNode {
   return (
     <Layout
       title={siteConfig.title}
-      description="简幻欢社区维基：MCJE / MCBE / Web 三套文档">
+      description="简幻欢社区维基">
       <HomepageHeader />
       <main>
         <HomepageFeatures />

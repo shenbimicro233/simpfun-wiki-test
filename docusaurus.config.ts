@@ -27,7 +27,7 @@ const config: Config = {
   },
 
   // Set the production url of your site here
-  url: 'https://simpdoc.top',
+  url: 'https://next.simpdoc.top',
   // Site is served from the domain root.
   // If you ever move the build to a SUBPATH (e.g. https://simpdoc.top/wiki/),
   // this MUST be updated too, or every CSS/JS asset will 404.
