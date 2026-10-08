@@ -19,3 +19,9 @@ desktop.ini
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# AI coding agent
+.codex
+.claude
+.opencode
+.mimocode
