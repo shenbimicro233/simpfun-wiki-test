@@ -111,6 +111,99 @@ const config: Config = {
     ],
   ],
 
+  // Themes are plugins that also provide a swizzleable theme. The local search
+  // plugin ships its own theme (SearchBar / SearchPage), so it MUST be declared
+  // here rather than in `plugins`.
+  //
+  // It is a classic "classic" plugin: it takes a SINGLE tuple of options.
+  themes: [
+    [
+      '@easyops-cn/docusaurus-search-local',
+      {
+        // This site has NO default docs instance (`docs: false`) — all three doc
+        // sets come from standalone plugin instances at /web, /mcje, /mcbe.
+        // The plugin defaults to ["docs"], which would index nothing at all.
+        // Leading slashes are optional; the plugin strips them.
+        docsRouteBasePath: ['web', 'mcje', 'mcbe'],
+
+        // These are the on-disk source dirs. They are ONLY used to compute the
+        // content hash when `hashed` is enabled — they do NOT decide what gets
+        // indexed. What gets indexed is driven by `docsRouteBasePath` above.
+        docsDir: ['docs-web', 'docs-mcje', 'docs-mcbe'],
+
+        // There is no blog, so make sure it is not scanned.
+        indexBlog: false,
+        // Index the homepage too, so looking up the wiki itself returns a hit.
+        indexPages: true,
+
+        // MUST contain exactly "zh" (not the Docusaurus locale "zh-Hans").
+        // The plugin gates its whole Chinese pipeline on `language.includes("zh")`
+        // (see dist/server/server/utils/buildIndex.js, generate.js and
+        // dist/client/client/utils/tokenize.js). Passing "zh-Hans" silently
+        // disables Chinese word segmentation.
+        //
+        // "en" is included as well: the docs are full of English terms
+        // (Paper / Fabric / server.properties / max-players …). With only "zh"
+        // those words are stored verbatim with NO English stemmer, so "servers"
+        // would not match "server". Adding "en" registers the English
+        // trimmer/stemmer pipeline. With 2+ languages lunr's multiLanguage()
+        // combines both pipelines, and the zh tokenizer (jieba) is still used
+        // for mixed CJK+Latin text because the plugin overrides it explicitly.
+        language: ['en', 'zh'],
+
+        // Bust the browser-cached index whenever doc content changes.
+        hashed: true,
+
+        // The left navbar is already full (logo + 3 doc entries), so pin the
+        // search bar to the right instead of relying on autodetection.
+        searchBarPosition: 'right',
+
+        // REQUIRED on this site. SearchBar calls:
+        //   useActiveVersion(activePlugin?.pluginId ?? docsPluginIdForPreferredVersion)
+        // On non-docs pages (e.g. the homepage) `activePlugin` is undefined, so it
+        // falls back to this option — whose default is the plugin id "default".
+        // Because this site runs `docs: false`, no docs plugin with id "default"
+        // exists and the SSG pass crashes with:
+        //   Docusaurus plugin global data not found for "docusaurus-plugin-content-docs" plugin with id "default"
+        // Pointing it at a real instance fixes that. Any instance works; all three
+        // have isLast=true, so none of them rewrites the search index URL.
+        docsPluginIdForPreferredVersion: 'web',
+
+        // Useful for a wiki that is mostly Chinese prose.
+        highlightSearchTermsOnTargetPage: true,
+        explicitSearchResultPath: true,
+
+        // Per-instance search: generates a SEPARATE index per path, so each doc
+        // set can be searched in isolation (scope selector in the search bar /
+        // on the /search page).
+        //
+        // `path` must NOT start with "/" — the plugin strips leading slashes and
+        // compares against the route with the baseUrl already removed.
+        searchContextByPaths: [
+          {label: '官网使用指南', path: 'web'},
+          {label: 'MCJE', path: 'mcje'},
+          {label: 'MCBE', path: 'mcbe'},
+        ],
+
+        // REQUIRED alongside searchContextByPaths — do not remove.
+        //
+        // By default the plugin partitions HARD: a document matching a context is
+        // `continue`d and thereby EXCLUDED from the root index
+        // (postBuildFactory.js: `if (matchedPaths.length > 0 && !useAllContextsWithNoSearchContext) continue;`).
+        // Our three contexts cover every doc path, so without this flag the root
+        // index ends up EMPTY — and since the worker fetches exactly ONE index per
+        // query (`searchIndexUrl.replace("{dir}", searchContext ? ... : "")`), the
+        // homepage and the /search page would find NOTHING at all.
+        //
+        // With it enabled:
+        //   • root index            -> every doc  ("search everywhere" still works)
+        //   • the three contexts    -> their own doc set only
+        //   • /search page gets an extra "Everywhere" scope option
+        useAllContextsWithNoSearchContext: true,
+      },
+    ],
+  ],
+
   // NOTE: this is intentionally `ThemeConfig` (not `satisfies Preset.ThemeConfig`).
   // Third-party plugins such as docusaurus-plugin-image-zoom read their options
   // from `themeConfig` but ship no type export, so an exact `satisfies` check
@@ -243,6 +336,16 @@ const config: Config = {
     prism: {
       theme: prismThemes.github,
       darkTheme: prismThemes.dracula,
+      additionalLanguages: [
+        'java',
+        'python',
+        'bash',
+        'json',
+        'powershell',
+        'properties',
+        'yaml',
+        'log',
+      ]
     },
   } as ThemeConfig,
 };

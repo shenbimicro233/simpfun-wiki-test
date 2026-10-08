@@ -13,6 +13,7 @@
 - [关于默认文档实例](#关于默认文档实例)
 - [v4 迁移准备](#v4-迁移准备)
 - [第三方插件：图片放大预览](#第三方插件图片放大预览)
+- [第三方插件：本地全文搜索](#第三方插件本地全文搜索)
 - [npm audit 警告：请勿执行 `npm audit fix --force`](#npm-audit-警告请勿执行-npm-audit-fix---force)
 - [npm 11 allowScripts 说明](#npm-11-allowscripts-说明)
 - [常见问题排查](#常见问题排查)
@@ -172,6 +173,173 @@ themeConfig: {
 - `medium-zoom` 已打包进客户端产物（`assets/js/main.*.js`）
 - 在真实浏览器中点击图片，`.medium-zoom-image--opened` 与遮罩层正常出现
 - 深色模式下遮罩取到 `background.dark` 的值（实测 `rgb(50, 50, 50)`）
+
+## 第三方插件：本地全文搜索
+
+本站装了 [`@easyops-cn/docusaurus-search-local`](https://github.com/easyops-cn/docusaurus-search-local)，
+提供**离线全文搜索**：构建时生成索引，访客端用 lunr.js 在浏览器里检索，无需任何后端或 Algolia 账号。
+**中英文同时可搜**（中文 jieba 分词 + 英文词干化），并支持**按文档实例分库限定范围**。
+
+### 必须注册在 `themes`，不是 `plugins`
+
+该插件通过 `getThemePath()` 提供自己的主题（`SearchBar` / `SearchPage`），因此**必须放进 `themes` 数组**。
+放进 `plugins` 不会生效。
+
+```ts
+themes: [
+  [
+    '@easyops-cn/docusaurus-search-local',
+    {
+      docsRouteBasePath: ['web', 'mcje', 'mcbe'],
+      docsDir: ['docs-web', 'docs-mcje', 'docs-mcbe'],
+      indexBlog: false,
+      indexPages: true,
+      language: ['en', 'zh'],
+      hashed: true,
+      searchBarPosition: 'right',
+      docsPluginIdForPreferredVersion: 'web',
+      highlightSearchTermsOnTargetPage: true,
+      explicitSearchResultPath: true,
+
+      // 按实例分库
+      searchContextByPaths: [
+        {label: '官网使用指南', path: 'web'},
+        {label: 'MCJE', path: 'mcje'},
+        {label: 'MCBE', path: 'mcbe'},
+      ],
+      // 与上面配套，缺了它首页就搜不到东西（详见坑四）
+      useAllContextsWithNoSearchContext: true,
+    },
+  ],
+],
+```
+
+### ⚠️ 坑一：`language` 必须写 `"zh"` 而不是 `"zh-Hans"`，且要带上 `"en"`
+
+插件内部一律用 `language.includes("zh")` 判断是否启用中文：
+`buildIndex.js`、`generate.js`、`client/.../tokenize.js` 三处都是这个写法。
+如果照搬 Docusaurus 的 locale 值写成 `language: ['zh-Hans']`，
+`includes('zh')` 为 **false** → 中文分词器根本不加载 → **中文搜索直接废掉**（英文却还能用，所以很难发现）。
+
+> 本站的 `i18n.defaultLocale` 是 `zh-Hans`，但插件要的是 `zh`。这两个值**故意不同**，不要"顺手改成一致"。
+
+**为什么还要加 `"en"`：** 文档里大量出现 `Paper`、`Fabric`、`server.properties`、`max-players` 这类英文词。
+只写 `['zh']` 时这些词会被**原样**存成词条，**没有英文词干处理** —— 搜 `servers` 匹配不到 `server`。
+加上 `"en"` 后 lunr 会注册英文的 trimmer/stemmer，两个以上语言时自动用 `multiLanguage()` 组合管线；
+而中文分词器（jieba）仍然生效，因为插件在 `buildIndex.js` 里**显式覆盖**了 tokenizer。
+
+实测证据 —— 根索引里的词条是**词干形式**，`"en"` 是否生效一眼可辨：
+
+```
+server ✓   paper ✓   fabric ✓
+forg ← forge     leav ← leaves     languag ← language     permiss ← permission
+```
+
+### ⚠️ 坑二：`docsRouteBasePath` 必须手写，因为本站没有默认 docs 实例
+
+插件默认值是 `["docs"]`，而本站是 `docs: false` + 三个独立实例（`/web`、`/mcje`、`/mcbe`）。
+**不配置的话索引会是空的**，搜索栏能显示但搜不到任何东西。
+
+顺带说明两个选项的分工，别搞混：
+
+| 选项 | 作用 | 是否影响索引内容 |
+| --- | --- | --- |
+| `docsRouteBasePath` | 决定**索引哪些路由** | ✅ 是，这才是关键 |
+| `docsDir` | 仅在 `hashed: true` 时用于算内容哈希 | ❌ 否，不影响索引内容 |
+
+### ⚠️ 坑三：`docsPluginIdForPreferredVersion` 必须指向真实实例
+
+`SearchBar` 内部执行：
+
+```js
+useActiveVersion(activePlugin?.pluginId ?? docsPluginIdForPreferredVersion)
+```
+
+在**非 docs 页面**（如首页）`activePlugin` 是 `undefined`，于是回退到这个选项，而**它的默认值是插件 id `"default"`**。
+本站 `docs: false`，不存在 id 为 `default` 的 docs 插件，SSG 阶段会直接构建失败：
+
+```
+Error: Docusaurus plugin global data not found for
+"docusaurus-plugin-content-docs" plugin with id "default"
+```
+
+指向任一真实实例即可（三个实例的 `isLast` 均为 `true`，所以都不会改写索引 URL）。
+
+### ⚠️ 坑四：开了 `searchContextByPaths` 就**必须**同时开 `useAllContextsWithNoSearchContext`
+
+这是最隐蔽的一个，**不报任何错，只是搜索结果悄悄变少**。
+
+插件的分库是**硬切分**。看 `postBuildFactory.js`：
+
+```js
+if (matchedPaths.length > 0 && !useAllContextsWithNoSearchContext) {
+    continue;   // 匹配到分库的文档，被排除出根索引
+}
+```
+
+也就是说：**默认情况下，凡是命中分库的文档都会被排除出根索引**。
+本站三个分库覆盖了全部文档路径，于是根索引会变成**空的**。
+
+而客户端每次查询**只 fetch 一个索引**（`worker.js`）：
+
+```js
+const url = `${baseUrl}${searchIndexUrl.replace("{dir}", searchContext ? `-${searchContext...}` : "")}`;
+```
+
+无 `ctx` 时取根索引。两者叠加的后果就是**首页和 `/search` 页搜不到任何文档**，而文档页内部却正常 —— 极难排查。
+
+实测对比（同一个构建配置，只改这一个 flag）：
+
+| | 根索引 `search-index.json` | 首页搜索「服务器」 |
+| --- | --- | --- |
+| `useAllContextsWithNoSearchContext` 缺省 | **601 字节，0 篇文档** | ❌ 什么都搜不到 |
+| `useAllContextsWithNoSearchContext: true` | **242 KB，8 篇全量** | ✅ 55 条结果 |
+
+开启后还会在 `/search` 页的作用域下拉里多出一个「**所有**」选项（这正是客户端常量里
+`useAllContextsWithNoSearchContext` 的来源），用于从分库视图跳回全库。
+
+> 注意：`docsRouteBasePath` 只能写非空字符串（Joi 校验会拒绝 `''`），
+> 所以**没法用空前缀 hack** 来让根索引装满。这个 flag 是唯一正解。
+
+### ⚠️ 坑五：`searchContextByPaths[].path` 不能以 `/` 开头
+
+插件会把路由去掉 `baseUrl` 后再比较，写 `/web` 匹配不上。写 `web`。
+
+### 已实测确认
+
+构建产物与真实浏览器（无头 Edge + CDP）均已验证：
+
+**索引文件**
+
+| 文件 | 覆盖 |
+| --- | --- |
+| `search-index.json`（根） | 8 篇全量：`web` 3 + `mcje` 2 + `mcbe` 3 |
+| `search-index-web.json` | 仅 `web` 3 篇 |
+| `search-index-mcje.json` | 仅 `mcje` 2 篇 |
+| `search-index-mcbe.json` | 仅 `mcbe` 3 篇 |
+
+**搜索行为**（查询 → 结果数）
+
+| 查询 | 结果 | 命中示例 |
+| --- | --- | --- |
+| 中文 `服务器`（全库） | 55 条 | `如何创建服务器` → `/web/create_server` |
+| 中文 `服务端`（全库） | 55 条 | `【MCBE】主流服务端介绍` → `/mcbe/select_server` |
+| 英文 `forge` | 17 条 | `Forge ⭐` → `/mcje/select_server` |
+| 英文 `server.properties` | 16 条 | `【MCBE】服务端配置文件介绍` → `/mcbe/server_properties` |
+| 英文 `max-players` | 7 条 | `配置文件注释翻译` → `/mcbe/server_properties` |
+| 中文 `端口`（限定 `mcbe`） | 10 条 | 范围正确收窄到 MCBE |
+| 英文 `paper`（限定 `mcje`） | 14 条 | `Paper ⭐` → `/mcje/select_server` |
+
+**其他**
+
+- 搜索栏渲染在导航栏**右侧**（`navbar__search-input`，`aria-label="Search"`）
+- `/search` 页作用域下拉选项为 `["所有", "官网使用指南", "MCJE", "MCBE"]`
+- 结果链接带 `?_highlight=…`，说明 `highlightSearchTermsOnTargetPage` 生效
+- 快捷键 `Ctrl/Cmd + K` 聚焦搜索栏，`Esc` 关闭
+
+### 索引不进版本库
+
+`build/search-index*.json` 是构建产物，随 `build/` 一起被 `.gitignore` 忽略，**不要提交**。
 
 ## npm audit 警告：请勿执行 `npm audit fix --force`
 
