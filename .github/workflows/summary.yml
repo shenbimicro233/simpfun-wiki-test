@@ -11,7 +11,11 @@ permissions:
 
 jobs:
   auto-reply:
+    # Let gh use the repository URL directly, so it does not depend on a git directory (runner has no .git)
+    env:
+      GH_REPO: ${{ github.repository }}
     runs-on: ubuntu-latest
+    # 只处理真实用户新开的 issue（跳过机器人账号 / 不处理 PR）
     if: github.event.issue.user.type != 'Bot' && github.event.issue.pull_request == null
     steps:
       - name: 确保标签存在
